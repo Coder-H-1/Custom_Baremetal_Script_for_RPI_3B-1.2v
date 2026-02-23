@@ -1,0 +1,1 @@
+# Custom_Baremetal_Script_for_RPI_3B-1.2v
