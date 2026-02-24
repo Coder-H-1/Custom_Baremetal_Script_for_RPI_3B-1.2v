@@ -20,3 +20,4 @@ typedef struct {
 
 // Core API
 int usb_read_device_descriptor(usb_device_descriptor_t *desc);
+int usb_set_address(uint8_t new_addr);
