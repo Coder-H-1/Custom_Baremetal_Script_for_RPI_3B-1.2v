@@ -1,0 +1,4 @@
+alias cls="clear"
+alias try="make clean && make"
+alias update="sudo mount /dev/sdb1 /mnt && sudo cp kernel8.img /mnt/ && sudo umount /mnt && sync && make clean && clear && echo 'done!' " 
+alias update2="sudo mount /dev/sdc1 /mnt && sudo cp kernel8.img /mnt/ && sudo umount /mnt && sync && make clean && clear && echo 'done!'" 
