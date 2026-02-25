@@ -1,7 +1,7 @@
 # Custom_Baremetal_Script_for_RPI_3B-1.2v
 
 
-*This script is like 64-bit kernel-low level-OS FOR Raspberry Pi 3 Model B+ v1.2*
+*This script is like 64-bit kernel low level OS FOR Raspberry Pi 3 Model B+ v1.2*
 
 *I mainly made this to get a low level learning with memory and working*
 
