@@ -10,12 +10,13 @@
 
 ####    `(number)` represents delay time, where number is a natural number.
 
-####    `(random=number)` represents a random number between (0 to `number`), where `number` is a natural number.
+####    `random number` represents a random number between (0 to `number`), where `number` is a natural number.
+
 
 # EXAMPLES:
     1. SCRIPT FOR BASIC ON and OFF (executes only once)
 
-        pin*7 + (1) - (1)
+        pin 7 + 1 - 1
 
         
         This line selects pin 7 and ON for 1 second then OFF for 1 second  and program closes.
@@ -24,7 +25,7 @@
 
     2. SCRIPT FOR BASIC ON and OFF (executes infinitely)
      
-        pin*7 inf > + (1) - (2)
+        pin 7 inf > + 1 - 2
 
 
         This line selects pin 7 and ON for 1 second then OFF for 2 second and repeats process after `>`.
@@ -33,7 +34,6 @@
 
     3. SCRIPT FOR BASIC ON and OFF with random delay (executes infinitely)
 
-        pin*7 inf > + (random=10) - (random=5)
-
-
+        pin 7 inf > + random 10 - random 5
+         
         This line selects pin 7 and ON for (a random number between 0 and 10) and OFF for (a random number between 0 and 5) and repeats after `>`.   
