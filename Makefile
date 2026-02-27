@@ -15,7 +15,7 @@ SRCS = \
     drivers/sd/sdhost.c  drivers/sd/fat32.c \
     drivers/IO/gpio.c \
     drivers/usb/core/usb_core.c drivers/usb/hc/dwc2.c \
-    drivers/usb/hc/usb_msc.c drivers/usb/hub/usb_hub.c \
+    drivers/usb/msc/usb_msc.c drivers/usb/hub/usb_hub.c \
     drivers/video/framebuffer.c drivers/video/mailbox.c 
 
 

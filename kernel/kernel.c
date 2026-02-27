@@ -1,6 +1,6 @@
 #include "../drivers/video/framebuffer.h"
 #include "../drivers/usb/hc/dwc2.h"
-#include "../drivers/usb/hc/usb_msc.h"
+#include "../drivers/usb/msc/usb_msc.h"
 #include "../drivers/usb/core/usb_core.h"
 #include "../drivers/usb/hub/usb_hub.h"
 #include "../drivers/IO/gpio.h"
@@ -20,50 +20,36 @@ void test(int delay, int type){
 
 
 void kernel_main(void) {
+        
     fb_init(640, 480);
     fb_clear(0);
     fb_print("Kernel start\n", COLOR_GREEN);
 
     dwc2_init();
+    delay_ms(50000);
     dwc2_port_reset();
+    fb_print("[USB] HPRT = ", COLOR_GREEN);
+    fb_print_hex((HPRT >> 24) & 0xFF);
+    fb_print_hex((HPRT >> 16) & 0xFF);
+    fb_print_hex((HPRT >> 8) & 0xFF);
+    fb_print_hex(HPRT & 0xFF);
+    fb_print("\n", COLOR_GREEN);    
+    uint8_t buf[8];
+
+    uint8_t setup[8] = {
+        0x80,
+        0x06,
+        0x00, 0x01,
+        0x00, 0x00,
+        8, 0x00
+    };
+
+    dwc2_control_transfer(0, setup, buf, 8, 1);
+
+    fb_print("[USB] Descriptor first byte: ", COLOR_GREEN);
+    fb_print_hex(buf[0]);
     
-    dwc2_set_address(1);   // hub
-    usb_hub_init(1);
-
-
-    usb_device_descriptor_t d;
-
-    if (usb_read_device_descriptor(&d) == 0) {
-        char h[5];
-
-        h[0] = "0123456789ABCDEF"[(d.idVendor >> 12) & 0xF];
-        h[1] = "0123456789ABCDEF"[(d.idVendor >> 8) & 0xF];
-        h[2] = "0123456789ABCDEF"[(d.idVendor >> 4) & 0xF];
-        h[3] = "0123456789ABCDEF"[d.idVendor & 0xF];
-        h[4] = 0;
-
-        fb_print("VID: ", COLOR_GREEN);
-        fb_print(h, COLOR_GREEN);
-
-        h[0] = "0123456789ABCDEF"[(d.idProduct >> 12) & 0xF];
-        h[1] = "0123456789ABCDEF"[(d.idProduct >> 8) & 0xF];
-        h[2] = "0123456789ABCDEF"[(d.idProduct >> 4) & 0xF];
-        h[3] = "0123456789ABCDEF"[d.idProduct & 0xF];
-
-        fb_print(" PID: ", COLOR_GREEN);
-        fb_print(h, COLOR_GREEN);
-        fb_print("\n", COLOR_GREEN);
-    }
-
-    usb_read_device_descriptor(&d);
-
-    if (d.bDeviceClass == 0x09) {  
-        fb_print("[USB] Root device is HUB\n", COLOR_GREEN);
-        usb_hub_init(1);
-        test(1, 0);
-
-    }
-
+    fb_print("\n", COLOR_GREEN);
 
     while (1);
 }
