@@ -22,6 +22,8 @@
 #define HCDMA0    (*(volatile uint32_t*)(DWC2_BASE + 0x514))
 #define HCINT0    (*(volatile uint32_t*)(DWC2_BASE + 0x508))
 
+#define HPRT_W1C_MASK ((1 << 1) | (1 << 3) | (1 << 5))
+
 #define GINTSTS_CMOD   (1 << 0)
 
 #define PCGCTL (*(volatile uint32_t*)(DWC2_BASE + 0xE00))

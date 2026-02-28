@@ -33,9 +33,9 @@ void dwc2_init(void)
     while (GRSTCTL & 1);
     delay(100000);
 
-    /* ADD THIS RIGHT HERE */
+    /* Instead of HCFG |= 1; */
+    // Try leaving HCFG at default or setting it to High Speed (bit 0-1 = 0)
     HCFG &= ~3;
-    HCFG |= 1;   // 48 MHz FS clock
     delay(100000);
 
     /* ------------------------------------------------ */
@@ -43,15 +43,11 @@ void dwc2_init(void)
     /* ------------------------------------------------ */
     GAHBCFG |= (1 << 5) | (1 << 0);
 
-
-    /* Enable FS/LS support */
-    HCFG |= (1 << 2);   // FSLSSUPP
-
     /* ------------------------------------------------ */
     /* 7️⃣ Flush TX FIFO                               */
     /* ------------------------------------------------ */
     GRSTCTL |= (1 << 5) | (0x10 << 6);
-    while (GRSTCTL & (1 << 5));
+    while (GRSTCTL & (1 << 5)); 
 
     /* ------------------------------------------------ */
     /* 8️⃣ Flush RX FIFO                               */
@@ -110,15 +106,14 @@ int dwc2_port_reset(void)
     }
 
     // --- Start Reset ---
-    hprt = HPRT;
-    hprt |= (1 << 8);        // PRTRESET
+    uint32_t hprt = HPRT;
+    hprt &= ~(HPRT_W1C_MASK | (1 << 2)); // Mask out W1C bits AND the Enable bit
+    hprt |= (1 << 8);                    // Set Reset bit
     HPRT = hprt;
 
-    delay(600000);           // >=50ms
+    delay(600000); // Wait for reset
 
-    // --- Stop Reset ---
-    hprt = HPRT;
-    hprt &= ~(1 << 8);
+    hprt &= ~(1 << 8);                   // Clear Reset bit
     HPRT = hprt;
 
     // Wait until reset bit actually clears
