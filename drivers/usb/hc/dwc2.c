@@ -1,184 +1,108 @@
 #include "dwc2.h"
 #include "../../video/framebuffer.h"
-
-static void delay(volatile int c)
-{
-    while (c--) asm volatile("nop");
-}
+#include "../../../kernel/core/utils.h"
 
 /* ------------------------------------------------ */
 /*                  INITIALIZATION                  */
 /* ------------------------------------------------ */
-void dwc2_init(void)
+int dwc2_init(void)
 {
-    fb_print("[USB] DWC2 Init\n", COLOR_GREEN);
+    /* 1/7 Waiting AHB idle */
+    fb_print("[DWC2] 1/7 Waiting AHB idle...\n", COLOR_GREEN);
+    GRSTCTL = GRSTCTL_AHBIDLE;
+    while (!(GRSTCTL & GRSTCTL_AHBIDLE));
+    fb_print("[DWC2] 1/7 AHB idle OK\n", COLOR_GREEN);
 
-    /* ------------------------------------------------ */
-    /* 1️⃣ Wait for AHB idle                            */
-    /* ------------------------------------------------ */
-    while (!(GRSTCTL & (1 << 31)));
+    /* 2/7 Core Reset */
+    fb_print("[DWC2] 2/7 Core Reset...\n", COLOR_GREEN);
+    GRSTCTL = GRSTCTL_CSFTRST;
+    while (GRSTCTL & GRSTCTL_CSFTRST);
+    delay_ms(50);
+    fb_print("[DWC2] 2/7 Core Reset OK\n", COLOR_GREEN);
 
-    /* ------------------------------------------------ */
-    /* 3️⃣ Force host mode                              */
-    /* ------------------------------------------------ */
-    GUSBCFG |= (1 << 29);
+    /* 3/7 PHY Init */
+    fb_print("[DWC2] 3/7 PHY Init...\n", COLOR_GREEN);
+    GUSBCFG |= GUSBCFG_PHYIF;
+    fb_print("[DWC2] 3/7 PHY Init OK\n", COLOR_GREEN);
 
-    /* Wait until controller reports Host mode (CMOD) */
-    while (!(GINTSTS & 1));   // Bit 0 = CMOD (1 = Host)
+    /* 4/7 Full Reset */
+    fb_print("[DWC2] 4/7 Full Reset...\n", COLOR_GREEN);
+    GRSTCTL = GRSTCTL_CSFTRST;
+    while (GRSTCTL & GRSTCTL_CSFTRST);
+    delay_ms(50);
+    fb_print("[DWC2] 4/7 Full Reset OK\n", COLOR_GREEN);
 
-    delay(200000);
+    /* 5/7 Select Host Mode */
+    fb_print("[DWC2] 5/7 Select Host Mode...\n", COLOR_GREEN);
+    GUSBCFG |= GUSBCFG_FORCEDEVMODE;
+    delay_ms(50);
+    GUSBCFG = (GUSBCFG & ~GUSBCFG_FORCEDEVMODE) | GUSBCFG_FORCEHOSTMODE;
+    delay_ms(50);
+    fb_print("[DWC2] 5/7 Select Host Mode OK\n", COLOR_GREEN);
 
-    /* 4️⃣ CRITICAL: Reset core AGAIN after mode switch */
-    GRSTCTL |= 1;
-    while (GRSTCTL & 1);
-    delay(100000);
+    /* 6/7 Power on port */
+    fb_print("[DWC2] 6/7 Power on port...\n", COLOR_GREEN);
+    HPRT |= HPRT_PRTPWR;
+    fb_print("[DWC2] 6/7 Power on port OK\n", COLOR_GREEN);
 
-    /* Instead of HCFG |= 1; */
-    // Try leaving HCFG at default or setting it to High Speed (bit 0-1 = 0)
-    HCFG &= ~3;
-    delay(100000);
+    /* 7/7 Enable interrupts */
+    fb_print("[DWC2] 7/7 Enable interrupts...\n", COLOR_GREEN);
+    GAHBCFG |= GAHBCFG_GLBLINTRMSK;
+    fb_print("[DWC2] 7/7 Enable interrupts OK\n", COLOR_GREEN);
 
-    /* ------------------------------------------------ */
-    /* 5️⃣ Enable DMA + Global Interrupt                */
-    /* ------------------------------------------------ */
-    GAHBCFG |= (1 << 5) | (1 << 0);
-
-    /* ------------------------------------------------ */
-    /* 7️⃣ Flush TX FIFO                               */
-    /* ------------------------------------------------ */
-    GRSTCTL |= (1 << 5) | (0x10 << 6);
-    while (GRSTCTL & (1 << 5)); 
-
-    /* ------------------------------------------------ */
-    /* 8️⃣ Flush RX FIFO                               */
-    /* ------------------------------------------------ */
-    GRSTCTL |= (1 << 4);
-    while (GRSTCTL & (1 << 4));
-
-    delay(200000);
-
-    /* ------------------------------------------------ */
-    /* 9️⃣ Power the host port                         */
-    /* ------------------------------------------------ */
-    uint32_t hprt = HPRT;
-    HPRT = hprt | (1 << 12);   // PRTPOWER  
-
-    delay(300000);
-
-    fb_print("[USB] Host Ready\n", COLOR_GREEN);
-    fb_print("\n", COLOR_GREEN);
-
-    fb_print("HCFG = ", COLOR_GREEN);
-    fb_print_hex32(HCFG);
-    fb_print("\n", COLOR_GREEN);
-
-    fb_print("HPRT before reset = ", COLOR_GREEN);
-    fb_print_hex32(HPRT);
-    fb_print("\n", COLOR_GREEN);
-
-    fb_print("HFNUM 1 = ", COLOR_GREEN);
-    fb_print_hex32(HFNUM);
-    fb_print("\n", COLOR_GREEN);
-
-    delay(1000000);
-
-    fb_print("HFNUM 2 = ", COLOR_GREEN);
-    fb_print_hex32(HFNUM);
-    fb_print("\n", COLOR_GREEN);
-
+    fb_print("[DWC2] Init complete, host ready\n", COLOR_GREEN);
+    return 0;
 }
-
-/* ------------------------------------------------ */
-/*                   PORT RESET                    */
-/* ------------------------------------------------ */
 
 int dwc2_port_reset(void)
 {
-    fb_print("[USB] Port Reset\n", COLOR_GREEN);
+    fb_print("[DWC2] Port reset start...\n", COLOR_GREEN);
+    uint32_t val = HPRT;
+    val &= ~(HPRT_W1C_MASK | HPRT_PRTENA);
+    HPRT = val | HPRT_PRTRST;
+    delay_ms(50); // Root port reset delay
+    HPRT = val & ~HPRT_PRTRST;
+    delay_ms(50);
 
-    uint32_t hprt;
-
-    // Ensure power on
-    hprt = HPRT;
-    if (!(hprt & (1 << 12))) {
-        HPRT = hprt | (1 << 12);
-        delay(300000);
-    }
-
-    // --- Start Reset ---
-    uint32_t hprt = HPRT;
-    hprt &= ~(HPRT_W1C_MASK | (1 << 2)); // Mask out W1C bits AND the Enable bit
-    hprt |= (1 << 8);                    // Set Reset bit
-    HPRT = hprt;
-
-    delay(600000); // Wait for reset
-
-    hprt &= ~(1 << 8);                   // Clear Reset bit
-    HPRT = hprt;
-
-    // Wait until reset bit actually clears
-    while (HPRT & (1 << 8));
-
-    // Wait for port enable
+    /* Wait for port enable */
+    fb_print("[DWC2] Waiting port enable...\n", COLOR_GREEN);
     int timeout = 1000000;
-    while (!(HPRT & (1 << 2))) {
+    while (!(HPRT & HPRT_PRTENA)) {
         if (--timeout == 0) {
-            fb_print("[USB] Port enable timeout\n", COLOR_RED);
+            fb_print("[DWC2] Port enable TIMEOUT\n", COLOR_RED);
             break;
         }
     }
 
-    // Now clear change bits (after enable attempt)
-    hprt = HPRT;
-    hprt |= (1 << 1);   // PRTCONNDET
-    hprt |= (1 << 3);   // PRTENCHNG
-    hprt |= (1 << 5);   // PRTOVRCURRCHNG
-    HPRT = hprt;
-
-    fb_print("[USB] HFNUM 1 = ", COLOR_GREEN );
-    fb_print_hex32(HFNUM);
-    fb_print("\n", COLOR_GREEN);
-
-    delay(1000000);
-
-    fb_print("[USB] HFNUM 2 = ", COLOR_GREEN);
-    fb_print_hex32(HFNUM);
-    fb_print("\n", COLOR_GREEN);
-
-    fb_print("[USB] HPRT ", COLOR_GREEN);
-    fb_print_hex32(HPRT);
-    fb_print("\n", COLOR_GREEN);
+    if (timeout > 0) {
+        fb_print("[DWC2] Port enabled OK\n", COLOR_GREEN);
+        delay_ms(50); // Mandatory stabilization delay
+    }
 
     return 0;
 }
 
 /* ------------------------------------------------ */
-/*                CONTROL TRANSFER                 */
+/*                  TRANSFER LOGIC                  */
 /* ------------------------------------------------ */
 
-#define HCINT_XFRC   (1 << 1)
-
-static int wait_for_xfer_complete(void)
+static int wait_for_channel(int ch)
 {
-    int timeout = 1000000;
-
-    while (!(HCINT0 & HCINT_XFRC)) {
-        if (--timeout == 0) {
-            fb_print("[USB] Transfer timeout\n", COLOR_RED);
+    uint64_t start = get_timer();
+    while (!(HCINT(ch) & (HCINT_XFERC | HCINT_CHHLTD))) {
+        if (get_timer() - start > 1000000) { // 1 second timeout
+            fb_print("[USB] Channel timeout\n", COLOR_RED);
             return -1;
         }
     }
 
-    uint32_t status = HCINT0;
+    uint32_t ints = HCINT(ch);
+    HCINT(ch) = 0xFFFFFFFF; // Clear all interrupts
 
-    fb_print("[USB] HCINT0 = ", COLOR_GREEN);
-    fb_print_hex((status >> 24) & 0xFF);
-    fb_print_hex((status >> 16) & 0xFF);
-    fb_print_hex((status >> 8) & 0xFF);
-    fb_print_hex(status & 0xFF);
-    fb_print("\n", COLOR_GREEN);
+    if (ints & HCINT_XACTERR) return -2;
+    if (ints & HCINT_STALL)   return -3;
+    if (ints & HCINT_NAK)     return -4;
 
-    HCINT0 = 0xFFFFFFFF;
     return 0;
 }
 
@@ -190,117 +114,66 @@ int dwc2_control_transfer(
     int in
 )
 {
-    uint32_t hcchar;
-    uint32_t hctsiz;
+    uint32_t speed = (HPRT & HPRT_PRTSPD_MASK) >> 17;
+    uint32_t lsdev = (speed == 2) ? HCCHAR_LSDEV : 0;
+    uint32_t mps = (speed == 2) ? 8 : 64; // Use 64 as default for Root device
+    int ch = 0;
 
-    uint32_t speed = (HPRT >> 17) & 3;
-    uint32_t lsdev = (speed == 2) ? (1 << 17) : 0;    
+    /* 1. SETUP STAGE */
+    fb_print("[USB-S]", 0xAAAAAA);
+    HCINT(ch) = 0xFFFFFFFF;
+    HCDMA(ch) = (uint32_t)(uintptr_t)setup;
+    HCTSIZ(ch) = (8 & HCTSIZ_XFERSIZE_MASK) | (1 << 19) | HCTSIZ_PID_SETUP;
+    HCCHAR(ch) = (mps << 0) | (dev_addr << 22) | lsdev | HCCHAR_EPTYPE_CTRL | HCCHAR_CHENA;
 
-    /* -------------------- */
-    /* 1️⃣ SETUP STAGE */
-    /* -------------------- */
+    if (wait_for_channel(ch) < 0) return -1;
 
-    HCINT0 = 0xFFFFFFFF;
+    /* 2. DATA STAGE */
+    if (len > 0) {
+        fb_print("[USB-D]", 0xAAAAAA);
+        HCINT(ch) = 0xFFFFFFFF;
+        HCDMA(ch) = (uint32_t)(uintptr_t)data;
+        HCTSIZ(ch) = (len & HCTSIZ_XFERSIZE_MASK) | (((len + mps - 1) / mps) << 19) | HCTSIZ_PID_DATA1;
+        HCCHAR(ch) = (mps << 0) | (dev_addr << 22) | lsdev | HCCHAR_EPTYPE_CTRL | HCCHAR_CHENA | (in ? HCCHAR_EPDIR_IN : 0);
 
-    // Ensure channel disabled
-    HCCHAR0 |= (1 << 30);
-    HCCHAR0 &= ~(1 << 31);
-    while (HCCHAR0 & (1 << 31));
-
-    HCDMA0 = (uint32_t)setup;
-
-    hctsiz =
-        (8 & 0x7FFFF) |
-        (1 << 19)     |
-        (3 << 29);    // PID = SETUP
-
-    HCTSIZ0 = hctsiz;
-
-    hcchar =
-        (8  << 0)        |   // MPS
-        (0  << 11)       |   // EP0
-        (0  << 15)       |   // OUT
-        (0  << 18)       |   // Control
-        lsdev            |   // speed
-        (dev_addr << 22) |
-        (1  << 31);          // Enable
-
-    HCCHAR0 = hcchar;
-
-    if (wait_for_xfer_complete() < 0)
-        return -1;
-
-    if (!(HPRT & (1 << 2))) {
-        fb_print("Port still not enabled\n", COLOR_RED);
-        return -1;
+        if (wait_for_channel(ch) < 0) return -1;
     }
 
-    /* -------------------- */
-    /* 2️⃣ DATA STAGE */
-    /* -------------------- */
+    /* status stage data toggle: always DATA1 */
+    /* status direction: opposite of data stage */
 
-    if (len > 0)
-    {
-        HCINT0 = 0xFFFFFFFF;
+    /* 3. STATUS STAGE */
+    fb_print("[USB-Z]", 0xAAAAAA);
+    HCINT(ch) = 0xFFFFFFFF;
+    HCDMA(ch) = 0;
+    HCTSIZ(ch) = (1 << 19) | HCTSIZ_PID_DATA1; // PID_DATA1 for status
+    HCCHAR(ch) = (mps << 0) | (dev_addr << 22) | lsdev | HCCHAR_EPTYPE_CTRL | HCCHAR_CHENA | (in ? 0 : HCCHAR_EPDIR_IN);
 
-        HCCHAR0 |= (1 << 30);
-        HCCHAR0 &= ~(1 << 31);
-        while (HCCHAR0 & (1 << 31));
-
-        HCDMA0 = (uint32_t)data;
-
-        hctsiz =
-            (len & 0x7FFFF) |
-            (((len + 7) / 8) << 19) |
-            (1 << 29);       // DATA1
-
-        HCTSIZ0 = hctsiz;
-
-        hcchar =
-            (8  << 0) |
-            (0  << 11) |
-            ((in ? 1 : 0) << 15) |
-            (0  << 18) |
-            lsdev      |
-            (dev_addr << 22) |
-            (1  << 31);
-
-        HCCHAR0 = hcchar;
-
-        if (wait_for_xfer_complete() < 0)
-            return -1;
-    }
-
-    /* -------------------- */
-    /* 3️⃣ STATUS STAGE */
-    /* -------------------- */
-
-    HCINT0 = 0xFFFFFFFF;
-
-    HCCHAR0 |= (1 << 30);
-    HCCHAR0 &= ~(1 << 31);
-    while (HCCHAR0 & (1 << 31));
-
-    hctsiz =
-        (0 << 0) |
-        (1 << 19) |
-        (1 << 29);   // DATA1
-
-    HCTSIZ0 = hctsiz;
-
-    hcchar =
-        (8  << 0) |
-        (0  << 11) |
-        ((in ? 0 : 1) << 15) |
-        (0  << 18) |
-        lsdev |
-        (dev_addr << 22) |
-        (1  << 31);
-
-    HCCHAR0 = hcchar;
-
-    if (wait_for_xfer_complete() < 0)
-        return -1;
+    if (wait_for_channel(ch) < 0) return -1;
 
     return 0;
+}
+
+int dwc2_bulk_transfer(
+    uint8_t dev_addr,
+    uint8_t ep,
+    uint8_t *data,
+    uint32_t len,
+    int in
+)
+{
+    // ... not needed for discovery ...
+    return -1;
+}
+
+int dwc2_interrupt_transfer(
+    uint8_t dev_addr,
+    uint8_t ep,
+    uint8_t *data,
+    uint32_t len,
+    int in
+)
+{
+    // ... not needed for discovery ...
+    return -1;
 }

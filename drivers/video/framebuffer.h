@@ -36,6 +36,16 @@ static void fb_print_hex(uint8_t val) {
     fb_print(hex, 0x00FF00);
 }
 
+// Optional: print 16-bit value as 4-digit hex
+static void fb_print_hex16(uint16_t val) {
+    char hex[5];
+    for (int i = 0; i < 4; i++) {
+        hex[3-i] = "0123456789ABCDEF"[ (val >> (i*4)) & 0xF ];
+    }
+    hex[4] = 0;
+    fb_print(hex, 0x00FF00);
+}
+
 // Optional: print 32-bit value as 8-digit hex
 static void fb_print_hex32(uint32_t val) {
     char hex[9];

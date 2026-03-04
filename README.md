@@ -1,7 +1,7 @@
 # Custom_Baremetal_Script_for_RPI_3B-1.2v
 
 
-*This script is like 64-bit kernel low level OS FOR Raspberry Pi 3 Model B+ v1.2*
+*This folder is like 64-bit kernel low level OS FOR Raspberry Pi 3 Model B+ v1.2*
 
 *I mainly made this to get a low level learning with memory and working*
 
@@ -20,5 +20,51 @@
 
     RPI will read the USB for script and get instructions and executes it.
     
-      
+## File Structure
+
+    boot/ 
+        cstart.c
+        start.S
+
+    kernel/
+        core/
+            panic.c
+            panic.h
+            utils.c
+            utils.h
+            
+        mem.c
+        mem.h
+        shell.c
+        shell.h
+
+    drivers/
+            IO/
+                gpio.c
+                gpio.h
+            sd/
+                sdhost.c
+                sdhost.h
+            uart/
+                uart.c
+                uart.h
+            usb/
+                core/
+                    usb_core.c
+                    usb_core.h
+                hc/
+                    dwc2.c
+                    dwc2.h
+                hub/
+                    usb_hub.c
+                    usb_hub.h
+                msc/
+                    usb_msc.c
+                    usb_msc.h
+            video/
+                framebuffer.c
+                framebuffer.h
+                font8x8.h
+                mailbox.c
+                mailbox.h
 

@@ -1,13 +1,12 @@
 #include "usb_hub.h"
-#include "../hc/dwc2.h"
+#include "../core/usb_core.h"
 #include "../../video/framebuffer.h"
 #include "../../../kernel/core/utils.h"
 
-#define USB_REQ_GET_DESCRIPTOR 0x06
-#define USB_REQ_SET_FEATURE    0x03
-#define USB_REQ_CLEAR_FEATURE  0x01
-
-#define USB_DT_HUB 0x29
+#define HUB_CLASS_REQ_GET_DESCRIPTOR 0x06
+#define HUB_CLASS_REQ_SET_FEATURE    0x03
+#define HUB_CLASS_REQ_CLEAR_FEATURE  0x01
+#define HUB_CLASS_REQ_GET_STATUS     0x00
 
 #define HUB_FEATURE_PORT_POWER 8
 #define HUB_FEATURE_PORT_RESET 4
@@ -21,82 +20,107 @@ typedef struct {
     uint8_t  bHubContrCurrent;
 } __attribute__((packed)) usb_hub_descriptor_t;
 
-static int hub_get_descriptor(uint8_t hub_addr, usb_hub_descriptor_t *desc) {
-    uint8_t setup[8] = {
-        0xA0,                     // IN | Class | Device
-        USB_REQ_GET_DESCRIPTOR,
-        0x00, USB_DT_HUB,         // HUB descriptor
-        0x00, 0x00,
-        sizeof(usb_hub_descriptor_t), 0x00
-    };
-
-    fb_print("[HUB] Get hub descriptor\n", COLOR_GREEN);
-    return dwc2_control_transfer(
+static int hub_get_descriptor(uint8_t hub_addr, usb_hub_descriptor_t *desc)
+{
+    return usb_control_msg(
         hub_addr,
-        setup,
-        (uint8_t *)desc,
+        0xA0, // IN | Class | Device
+        HUB_CLASS_REQ_GET_DESCRIPTOR,
+        (USB_DT_HUB << 8),
+        0,
         sizeof(usb_hub_descriptor_t),
-        1
+        desc
     );
 }
 
-static void hub_port_power(uint8_t hub_addr, int port) {
-    uint8_t setup[8] = {
-        0x23,                 // OUT | Class | Other
-        USB_REQ_SET_FEATURE,
-        HUB_FEATURE_PORT_POWER, 0x00,
-        port, 0x00,
-        0x00, 0x00
-    };
-
-    fb_print("[HUB] Power port ", COLOR_GREEN);
-    fb_print_dec(port);
-    fb_print("\n", COLOR_GREEN);
-
-    dwc2_control_transfer(hub_addr, setup, 0, 0, 0);
-    delay_ms(100);
+static int hub_set_port_feature(uint8_t hub_addr, uint8_t port, uint16_t feature)
+{
+    return usb_control_msg(
+        hub_addr,
+        0x23, // OUT | Class | Other
+        HUB_CLASS_REQ_SET_FEATURE,
+        feature,
+        port,
+        0,
+        0
+    );
 }
 
-static void hub_port_reset(uint8_t hub_addr, int port) {
-    uint8_t setup[8] = {
-        0x23,                 // OUT | Class | Other
-        USB_REQ_SET_FEATURE,
-        HUB_FEATURE_PORT_RESET, 0x00,
-        port, 0x00,
-        0x00, 0x00
-    };
-
-    fb_print("[HUB] Reset port ", COLOR_GREEN);
-    fb_print_dec(port);
-    fb_print("\n", COLOR_GREEN);
-
-    dwc2_control_transfer(hub_addr, setup, 0, 0, 0);
-    delay_ms(50);
+static int hub_get_port_status(uint8_t hub_addr, uint8_t port, usb_port_status_t *status)
+{
+    return usb_control_msg(
+        hub_addr,
+        0xA3, // IN | Class | Other
+        HUB_CLASS_REQ_GET_STATUS,
+        0,
+        port,
+        sizeof(usb_port_status_t),
+        status
+    );
 }
 
-int usb_hub_init(uint8_t hub_addr) {
+int usb_hub_init(uint8_t hub_addr)
+{
     usb_hub_descriptor_t hub;
-
-    fb_print("[HUB] Initializing USB hub\n", COLOR_GREEN);
+    fb_print("[HUB] Initializing hub at addr ", COLOR_GREEN);
+    fb_print_hex(hub_addr);
+    fb_print("\n", COLOR_GREEN);
 
     if (hub_get_descriptor(hub_addr, &hub) != 0) {
         fb_print("[HUB] Failed to read hub descriptor\n", COLOR_RED);
         return -1;
     }
 
-    fb_print("[HUB] Ports: ", COLOR_GREEN);
+    fb_print("[HUB] Detected ", COLOR_GREEN);
     fb_print_dec(hub.bNbrPorts);
-    fb_print("\n", COLOR_GREEN);
+    fb_print(" ports\n", COLOR_GREEN);
 
     for (int port = 1; port <= hub.bNbrPorts; port++) {
-        hub_port_power(hub_addr, port);
-        hub_port_reset(hub_addr, port);
-
-        fb_print("[HUB] Port ", COLOR_GREEN);
-        fb_print_dec(port);
-        fb_print(" ready\n", COLOR_GREEN);
+        hub_set_port_feature(hub_addr, port, HUB_FEATURE_PORT_POWER);
+        delay_ms(hub.bPwrOn2PwrGood * 2);
     }
 
-    fb_print("[HUB] Hub init done\n", COLOR_GREEN);
     return 0;
+}
+
+int usb_hub_poll(uint8_t hub_addr)
+{
+    usb_hub_descriptor_t hub;
+    if (hub_get_descriptor(hub_addr, &hub) != 0) return -1;
+
+    for (int port = 1; port <= hub.bNbrPorts; port++) {
+        usb_port_status_t status;
+        if (hub_get_port_status(hub_addr, port, &status) == 0) {
+            if (status.wPortChange & USB_PORT_STAT_C_CONNECTION) {
+                if (status.wPortStatus & USB_PORT_STAT_CONNECTION) {
+                    fb_print("[HUB] Port ", COLOR_GREEN);
+                    fb_print_dec(port);
+                    fb_print(" device connected!\n", COLOR_GREEN);
+
+                    // Reset port to start enumeration
+                    hub_set_port_feature(hub_addr, port, HUB_FEATURE_PORT_RESET);
+                    delay_ms(50);
+                    
+                    // In a real stack, we would now call usb_enumerate_device()
+                    // for the device on this port.
+                } else {
+                    fb_print("[HUB] Port ", COLOR_GREEN);
+                    fb_print_dec(port);
+                    fb_print(" device disconnected\n", COLOR_GREEN);
+                }
+                // Clear the change bit? Standard hubs require clearing feature 16 (C_PORT_CONNECTION)
+                usb_control_msg(hub_addr, 0x23, HUB_CLASS_REQ_CLEAR_FEATURE, 16, port, 0, 0);
+            }
+        }
+    }
+    return 0;
+}
+
+/* ── Public wrappers for kernel-level port enumeration ──────────────────── */
+int hub_set_port_feature_ext(uint8_t hub_addr, uint8_t port, uint16_t feature) {
+    return hub_set_port_feature(hub_addr, port, feature);
+}
+
+int hub_get_port_status_ext(uint8_t hub_addr, uint8_t port, usb_port_status_t *status) {
+    return hub_get_port_status(hub_addr, port, status);
 }

@@ -3,20 +3,32 @@
 
 /* ------------ delays ------------ */
 
-void delay_cycles(uint32_t c) {
-    while (c--){
-        asm volatile("nop");
+/* ------------ delays ------------ */
+
+#define SYSTIMER_CLO (*(volatile uint32_t*)0x3F003004)
+#define SYSTIMER_CHI (*(volatile uint32_t*)0x3F003008)
+
+uint64_t get_timer(void) {
+    uint32_t hi = SYSTIMER_CHI;
+    uint32_t lo = SYSTIMER_CLO;
+    if (hi != SYSTIMER_CHI) {
+        hi = SYSTIMER_CHI;
+        lo = SYSTIMER_CLO;
     }
+    return ((uint64_t)hi << 32) | lo;
+}
+
+void delay_cycles(uint32_t c) {
+    while (c--) asm volatile("nop");
 }
 
 void delay_us(uint32_t us) {
-    while (us--)
-        delay_cycles(6);
+    uint64_t start = get_timer();
+    while (get_timer() - start < us);
 }
 
 void delay_ms(uint32_t ms) {
-    while (ms--)
-        delay_us(1000);
+    delay_us(ms * 1000);
 }
 
 /* ------------ memory ------------ */
@@ -51,6 +63,68 @@ size_t strlen(const char *s) {
     while (*s++) n++;
     return n;
 }
+
+int strcmp(const char *a, const char *b) {
+    while (*a && (*a == *b)) { a++; b++; }
+    return (unsigned char)*a - (unsigned char)*b;
+}
+
+int strncmp(const char *a, const char *b, size_t n) {
+    while (n-- && *a && (*a == *b)) { a++; b++; }
+    if (n == (size_t)-1) return 0;
+    return (unsigned char)*a - (unsigned char)*b;
+}
+
+char *strcpy(char *dst, const char *src) {
+    char *d = dst;
+    while ((*d++ = *src++));
+    return dst;
+}
+
+char *strncpy(char *dst, const char *src, size_t n) {
+    char *d = dst;
+    while (n && (*d++ = *src++)) n--;
+    while (n--) *d++ = '\0';
+    return dst;
+}
+
+/* Reentrant string tokenizer */
+char *strtok_r(char *s, const char *delim, char **saveptr) {
+    if (s == 0) s = *saveptr;
+    /* skip leading delimiters */
+    while (*s) {
+        const char *d = delim;
+        int is_delim = 0;
+        while (*d) { if (*s == *d++) { is_delim = 1; break; } }
+        if (!is_delim) break;
+        s++;
+    }
+    if (*s == '\0') { *saveptr = s; return 0; }
+    char *token = s;
+    while (*s) {
+        const char *d = delim;
+        while (*d) {
+            if (*s == *d) { *s = '\0'; *saveptr = s + 1; return token; }
+            d++;
+        }
+        s++;
+    }
+    *saveptr = s;
+    return token;
+}
+
+/* Integer to ASCII: base 10 or 16 */
+void itoa(uint32_t v, char *buf, int base) {
+    const char digits[] = "0123456789ABCDEF";
+    char tmp[11];
+    int i = 0;
+    if (v == 0) { buf[0] = '0'; buf[1] = 0; return; }
+    while (v && i < 10) { tmp[i++] = digits[v % base]; v /= base; }
+    int j = 0;
+    while (i > 0) buf[j++] = tmp[--i];
+    buf[j] = 0;
+}
+
 
 /* ------------ printing ------------ */
 
